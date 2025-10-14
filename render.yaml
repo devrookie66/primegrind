@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: linksync-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: CLIENT_ID
+        sync: false
+      - key: GUILD_ID
+        sync: false
+      - key: MONGO_URI
+        fromDatabase:
+          name: linksync-mongodb
+          property: connectionString
+      - key: PORT
+        value: 3000
+      - key: ALLOWED_LINK_DOMAINS
+        value: ouo.io,tr.link,cuty.io
+      - key: POINTS_PER_CLICK
+        value: 1
+    healthCheckPath: /healthz
+
+databases:
+  - name: linksync-mongodb
+    databaseName: linksync
+    plan: free
+
+
