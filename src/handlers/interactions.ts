@@ -23,9 +23,10 @@ import {
   deleteLinkModal,
   getUserInfoModal,
   getLinkInfoModal,
-  deleteUserLinksModal
+  deleteUserLinksModal,
+  userLinksListButtons
 } from '../ui/components';
-import { getNextLinkForUser, enqueueLink, addBudget, removeBudget, markVisited } from '../services/linkQueue';
+import { getNextLinkForUser, enqueueLink, addBudget, removeBudget, markVisited, getUserLinks } from '../services/linkQueue';
 import { addPoints, getUserBalance, removePoints } from '../services/economy';
 import { config, isAllowedDomain } from '../config';
 import {
@@ -48,6 +49,29 @@ export async function handleInteraction(interaction: Interaction) {
 }
 
 async function handleSlash(interaction: ChatInputCommandInteraction) {
+  // /coin komutu
+  if (interaction.commandName === 'coin') {
+    await interaction.deferReply({ ephemeral: true });
+
+    const userId = interaction.user.id;
+    const balance = await getUserBalance(userId);
+
+    const embed = new EmbedBuilder()
+      .setColor(0xFFD700)
+      .setTitle('💰 Puan Bakiyeniz')
+      .setDescription(
+        `**Toplam Puanınız:** ${balance}\n\n` +
+        `🎯 Daha fazla puan kazanmak için <#1426988133375017001> kanalından link alabilirsiniz!\n` +
+        `📤 Puanlarınızı harcayarak kendi linkinizi sisteme ekleyebilirsiniz!`
+      )
+      .setFooter({ text: `Kullanıcı: ${interaction.user.username}` })
+      .setThumbnail(interaction.user.displayAvatarURL())
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+    return;
+  }
+
   if (interaction.commandName === 'setup') {
     await interaction.deferReply({ ephemeral: true });
 
@@ -121,17 +145,22 @@ async function handleButton(interaction: ButtonInteraction) {
       });
     }
 
+    // Tracking token'ı al
+    const tracking = link.clickTracking?.get(interaction.user.id);
+    const trackingUrl = tracking ? `${config.baseUrl}/track/${link._id}/${interaction.user.id}/${tracking.token}` : link.url;
+
     // Kullanıcıya link ve doğrulama paneli gönder
     const embed = new EmbedBuilder()
       .setColor(0x00FF00)
       .setTitle('✅ Link Hazır!')
       .setDescription(
-        `🔗 **Linkiniz:** ${link.url}\n\n` +
+        `🔗 **Linkiniz:** ${trackingUrl}\n\n` +
         `**Yapılacaklar:**\n` +
         `1. Yukarıdaki linke tıklayın\n` +
         `2. Açılan sayfaları geçip hedef linke ulaşın\n` +
         `3. Aşağıdaki "Ziyaret Ettim" butonuna tıklayın\n\n` +
-        `💰 Kazanacağınız puan: **${config.pointsPerVerifiedClick}**`
+        `💰 Kazanacağınız puan: **${config.pointsPerVerifiedClick}**\n\n` +
+        `⚠️ **ÖNEMLİ:** Linke tıklamadan "Ziyaret Ettim" butonuna basarsanız puan kazanamazsınız!`
       )
       .setFooter({ text: 'Link ID: ' + link._id.toString() })
       .setTimestamp();
@@ -154,7 +183,7 @@ async function handleButton(interaction: ButtonInteraction) {
       
       if (!updatedLink) {
         return interaction.editReply({
-          content: '❌ Link bulunamadı veya zaten ziyaret ettiniz.',
+          content: '❌ Linke tıklamadınız veya link bulunamadı! Önce linke tıklayıp hedef sayfaya ulaştıktan sonra bu butona basın.',
         });
       }
 
@@ -190,6 +219,76 @@ async function handleButton(interaction: ButtonInteraction) {
   }
 
   if (id === 'budget:open') {
+    await interaction.deferReply({ ephemeral: true });
+    
+    // Kullanıcının linklerini getir
+    const userLinksData = await getUserLinks(interaction.user.id, 0, 5);
+    
+    if (userLinksData.links.length === 0) {
+      return interaction.editReply({
+        content: '❌ Henüz sisteme link eklememişsiniz! Önce "Submit Link" butonuna basıp link ekleyin.',
+      });
+    }
+    
+    const linksEmbed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('🔗 Linkleriniz')
+      .setDescription(
+        userLinksData.links.map((link, i) => 
+          `**${i + 1}.** ${link.url.substring(0, 60)}${link.url.length > 60 ? '...' : ''}\n` +
+          `├ 🆔 ID: \`${link._id.toString()}\`\n` +
+          `├ 💰 Budget: **${link.budget}** puan\n` +
+          `├ 👁️ Ziyaretçi: **${link.visitors.length}**\n` +
+          `└ 📅 Tarih: ${new Date(link.createdAt).toLocaleDateString('tr-TR')}`
+        ).join('\n\n')
+      )
+      .setFooter({ text: `Toplam ${userLinksData.total} linkiniz var • Sayfa 1` })
+      .setTimestamp();
+    
+    await interaction.editReply({
+      embeds: [linksEmbed],
+      components: [userLinksListButtons(0, userLinksData.hasMore)]
+    });
+    return;
+  }
+  
+  // Kullanıcının linklerini sayfalama
+  if (id.includes('user_links:')) {
+    await interaction.deferUpdate();
+    
+    let page = 0;
+    if (id.includes(':next:')) {
+      page = parseInt(id.split(':').pop() || '0') + 1;
+    } else if (id.includes(':prev:')) {
+      page = Math.max(0, parseInt(id.split(':').pop() || '0') - 1);
+    }
+    
+    const userLinksData = await getUserLinks(interaction.user.id, page, 5);
+    
+    const linksEmbed = new EmbedBuilder()
+      .setColor(0x5865F2)
+      .setTitle('🔗 Linkleriniz')
+      .setDescription(
+        userLinksData.links.map((link, i) => 
+          `**${page * 5 + i + 1}.** ${link.url.substring(0, 60)}${link.url.length > 60 ? '...' : ''}\n` +
+          `├ 🆔 ID: \`${link._id.toString()}\`\n` +
+          `├ 💰 Budget: **${link.budget}** puan\n` +
+          `├ 👁️ Ziyaretçi: **${link.visitors.length}**\n` +
+          `└ 📅 Tarih: ${new Date(link.createdAt).toLocaleDateString('tr-TR')}`
+        ).join('\n\n') || 'Link bulunamadı.'
+      )
+      .setFooter({ text: `Toplam ${userLinksData.total} linkiniz var • Sayfa ${page + 1}` })
+      .setTimestamp();
+    
+    await interaction.editReply({
+      embeds: [linksEmbed],
+      components: [userLinksListButtons(page, userLinksData.hasMore)]
+    });
+    return;
+  }
+  
+  // Budget modal'ı aç
+  if (id === 'user_links:manage_budget') {
     return interaction.showModal(manageBudgetModal());
   }
 

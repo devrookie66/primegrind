@@ -7,6 +7,7 @@ export const config = {
   guildId: process.env.GUILD_ID || '',
   mongoUri: process.env.MONGO_URI || 'mongodb://localhost:27017/linksync',
   port: parseInt(process.env.PORT || '3000', 10),
+  baseUrl: process.env.BASE_URL || `http://localhost:${process.env.PORT || '3000'}`,
   allowedLinkDomains: (process.env.ALLOWED_LINK_DOMAINS || 'ouo.io,tr.link,cuty.io')
     .split(',')
     .map((d) => d.trim().toLowerCase())

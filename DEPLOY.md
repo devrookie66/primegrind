@@ -37,6 +37,7 @@ git push -u origin main
    - `DISCORD_TOKEN` = your bot token
    - `CLIENT_ID` = your Discord application client ID
    - `GUILD_ID` = your Discord server (guild) ID
+   - `BASE_URL` = your Render service URL (e.g., `https://your-service-name.onrender.com`)
 6. Click **Apply** to deploy
 
 ### Option B: Manual Setup
@@ -60,6 +61,7 @@ git push -u origin main
      - `CLIENT_ID` = your client ID
      - `GUILD_ID` = your guild ID
      - `MONGO_URI` = MongoDB connection string from step 1
+     - `BASE_URL` = https://your-service-name.onrender.com (use your actual Render URL)
      - `PORT` = 3000
      - `ALLOWED_LINK_DOMAINS` = ouo.io,tr.link,cuty.io
      - `POINTS_PER_CLICK` = 1

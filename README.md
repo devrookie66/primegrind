@@ -47,11 +47,14 @@ CLIENT_ID=your_discord_app_client_id
 GUILD_ID=your_guild_id
 MONGO_URI=mongodb://localhost:27017/linksync
 PORT=3000
+BASE_URL=http://localhost:3000
 ALLOWED_LINK_DOMAINS=ouo.io,tr.link,cuty.io
 POINTS_PER_CLICK=1
 ADMIN_PASSWORD=your_secure_admin_password
 ADMIN_USERS=admin_discord_user_id_1,admin_discord_user_id_2
 ```
+
+> **Important for Production:** Set `BASE_URL` to your actual domain (e.g., `https://your-service.onrender.com`)
 
 ## Discord Setup
 1. Create Application at [Discord Developer Portal](https://discord.com/developers/applications)
@@ -65,6 +68,7 @@ ADMIN_USERS=admin_discord_user_id_1,admin_discord_user_id_2
 ### Public Endpoints
 - `GET /api/link/next/:userId` → returns next available link
 - `POST /api/verify-click` → verifies visit and awards points
+- `GET /track/:linkId/:userId/:token` → click tracking redirect (NEW!)
 - `GET /healthz` → health check
 
 ### Admin Panel

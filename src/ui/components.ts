@@ -218,4 +218,31 @@ export const deleteUserLinksModal = () =>
       )
     );
 
+// User Links List Buttons
+export const userLinksListButtons = (page: number, hasMore: boolean) => {
+  const row = new ActionRowBuilder<ButtonBuilder>();
+  
+  if (page > 0) {
+    row.addComponents(
+      new ButtonBuilder().setCustomId(`user_links:prev:${page}`).setLabel('◀️ Önceki').setStyle(ButtonStyle.Secondary)
+    );
+  }
+  
+  row.addComponents(
+    new ButtonBuilder().setCustomId('user_links:manage_budget').setLabel('💰 Budget Yönet').setStyle(ButtonStyle.Primary)
+  );
+  
+  if (hasMore) {
+    row.addComponents(
+      new ButtonBuilder().setCustomId(`user_links:next:${page}`).setLabel('Sonraki ▶️').setStyle(ButtonStyle.Secondary)
+    );
+  }
+  
+  row.addComponents(
+    new ButtonBuilder().setCustomId('user_links:refresh').setLabel('🔄 Yenile').setStyle(ButtonStyle.Success)
+  );
+  
+  return row;
+};
+
 

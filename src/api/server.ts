@@ -3,7 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { connectDatabase } from '../services/db';
 import { config } from '../config';
-import { getNextLinkForUser, markVisited } from '../services/linkQueue';
+import { getNextLinkForUser, markVisited, markClicked } from '../services/linkQueue';
 import { addPoints } from '../services/economy';
 import {
   requireAdmin,
@@ -34,6 +34,24 @@ export function createServer() {
     if (!updated) return res.status(404).json({ error: 'link_not_found' });
     await addPoints(userId, config.pointsPerVerifiedClick);
     return res.json({ ok: true });
+  });
+
+  // Tracking endpoint - Kullanıcı linke tıkladığında buraya gelir
+  app.get('/track/:linkId/:userId/:token', async (req, res) => {
+    const { linkId, userId, token } = req.params;
+    
+    if (!linkId || !userId || !token) {
+      return res.status(400).send('Invalid tracking parameters');
+    }
+    
+    const result = await markClicked(linkId, userId, token);
+    
+    if (!result) {
+      return res.status(404).send('Tracking link not found or expired');
+    }
+    
+    // Kullanıcıyı gerçek linke yönlendir
+    return res.redirect(result.targetUrl);
   });
 
   // Root endpoint - Bot çalışıyor durumunu gösterir
