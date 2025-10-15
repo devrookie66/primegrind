@@ -36,6 +36,17 @@ export function createServer() {
     return res.json({ ok: true });
   });
 
+  // Root endpoint - Bot çalışıyor durumunu gösterir
+  app.get('/', (_req, res) => {
+    res.json({
+      status: 'online',
+      message: 'PrimeGrind Bot is running!',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString()
+    });
+  });
+
+  // Health check endpoints - Render için
   app.post('/healthz', (_req, res) => res.json({ ok: true }));
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
 

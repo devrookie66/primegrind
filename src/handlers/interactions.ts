@@ -8,10 +8,38 @@ import {
   ButtonBuilder,
   ButtonStyle,
 } from 'discord.js';
-import { earnLinkButton, manageBudgetModal, submitLinkModal, submitPanelButtons, verifyVisitButtons } from '../ui/components';
+import { 
+  earnLinkButton, 
+  manageBudgetModal, 
+  submitLinkModal, 
+  submitPanelButtons, 
+  verifyVisitButtons,
+  adminPanelButtons,
+  adminPanelButtons2,
+  userListButtons,
+  linkListButtons,
+  setUserBalanceModal,
+  addPointsModal,
+  deleteLinkModal,
+  getUserInfoModal,
+  getLinkInfoModal,
+  deleteUserLinksModal
+} from '../ui/components';
 import { getNextLinkForUser, enqueueLink, addBudget, removeBudget, markVisited } from '../services/linkQueue';
 import { addPoints, getUserBalance, removePoints } from '../services/economy';
 import { config, isAllowedDomain } from '../config';
+import {
+  isAdmin,
+  isAdminChannel,
+  getSystemStats,
+  getAllUsers,
+  getAllLinks,
+  setUserBalance,
+  deleteLink,
+  deleteLinksByUser,
+  getUserInfo,
+  getLinkInfo
+} from '../services/adminPanel';
 
 export async function handleInteraction(interaction: Interaction) {
   if (interaction.isChatInputCommand()) return handleSlash(interaction);
@@ -41,6 +69,41 @@ async function handleSlash(interaction: ChatInputCommandInteraction) {
     await channel.send({ embeds: [submitEmbed], components: [submitPanelButtons()] });
 
     await interaction.editReply('Setup messages sent.');
+  }
+
+  if (interaction.commandName === 'admin') {
+    await interaction.deferReply({ ephemeral: false });
+
+    // Yetki kontrolü
+    if (!isAdmin(interaction.user.id)) {
+      return interaction.editReply('❌ Bu komutu kullanma yetkiniz yok!');
+    }
+
+    // Kanal kontrolü
+    if (!isAdminChannel(interaction.channelId)) {
+      return interaction.editReply('❌ Bu komut sadece admin kanalında kullanılabilir!');
+    }
+
+    const stats = await getSystemStats();
+
+    const adminEmbed = new EmbedBuilder()
+      .setColor(0xFF0000)
+      .setTitle('🛡️ Admin Kontrol Paneli')
+      .setDescription('PrimeGrind Bot Yönetim Paneline Hoş Geldiniz!')
+      .addFields(
+        { name: '👥 Toplam Kullanıcı', value: stats.totalUsers.toString(), inline: true },
+        { name: '🔗 Toplam Link', value: stats.totalLinks.toString(), inline: true },
+        { name: '✅ Aktif Link', value: stats.activeLinks.toString(), inline: true },
+        { name: '💰 Sistemdeki Toplam Puan', value: stats.totalPoints.toString(), inline: true },
+        { name: '📊 Son Güncelleme', value: new Date().toLocaleString('tr-TR'), inline: false }
+      )
+      .setFooter({ text: 'Admin ID: ' + interaction.user.id })
+      .setTimestamp();
+
+    await interaction.editReply({
+      embeds: [adminEmbed],
+      components: [adminPanelButtons(), adminPanelButtons2()]
+    });
   }
 }
 
@@ -129,6 +192,162 @@ async function handleButton(interaction: ButtonInteraction) {
   if (id === 'budget:open') {
     return interaction.showModal(manageBudgetModal());
   }
+
+  // Admin Panel Butonları
+  if (id.startsWith('admin:')) {
+    // Yetki kontrolü
+    if (!isAdmin(interaction.user.id)) {
+      return interaction.reply({ content: '❌ Bu özelliği kullanma yetkiniz yok!', ephemeral: true });
+    }
+
+    // İstatistikler
+    if (id === 'admin:stats' || id === 'admin:refresh' || id === 'admin:back') {
+      await interaction.deferUpdate();
+      const stats = await getSystemStats();
+
+      const adminEmbed = new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle('🛡️ Admin Kontrol Paneli')
+        .setDescription('PrimeGrind Bot Yönetim Paneline Hoş Geldiniz!')
+        .addFields(
+          { name: '👥 Toplam Kullanıcı', value: stats.totalUsers.toString(), inline: true },
+          { name: '🔗 Toplam Link', value: stats.totalLinks.toString(), inline: true },
+          { name: '✅ Aktif Link', value: stats.activeLinks.toString(), inline: true },
+          { name: '💰 Sistemdeki Toplam Puan', value: stats.totalPoints.toString(), inline: true },
+          { name: '📊 Son Güncelleme', value: new Date().toLocaleString('tr-TR'), inline: false }
+        )
+        .setFooter({ text: 'Admin ID: ' + interaction.user.id })
+        .setTimestamp();
+
+      await interaction.editReply({
+        embeds: [adminEmbed],
+        components: [adminPanelButtons(), adminPanelButtons2()]
+      });
+      return;
+    }
+
+    // Kullanıcı listesi
+    if (id === 'admin:users' || id.includes('admin:users:')) {
+      await interaction.deferUpdate();
+      
+      let page = 0;
+      if (id.includes(':next:')) {
+        page = parseInt(id.split(':').pop() || '0') + 1;
+      } else if (id.includes(':prev:')) {
+        page = Math.max(0, parseInt(id.split(':').pop() || '0') - 1);
+      }
+
+      const userData = await getAllUsers(page, 10);
+
+      const userListEmbed = new EmbedBuilder()
+        .setColor(0x00FF00)
+        .setTitle('👥 Kullanıcı Listesi')
+        .setDescription(
+          userData.users.map((u, i) => 
+            `**${page * 10 + i + 1}.** <@${u.userId}>\n` +
+            `├ 💰 Bakiye: **${u.balance}** puan\n` +
+            `├ 🔗 Ziyaret: **${u.visitedCount}** link\n` +
+            `└ 📅 Katılma: ${new Date(u.createdAt).toLocaleDateString('tr-TR')}`
+          ).join('\n\n') || 'Henüz kullanıcı yok.'
+        )
+        .setFooter({ text: `Sayfa ${page + 1} • Toplam ${userData.total} kullanıcı` })
+        .setTimestamp();
+
+      await interaction.editReply({
+        embeds: [userListEmbed],
+        components: [userListButtons(page, userData.hasMore)]
+      });
+      return;
+    }
+
+    // Link listesi
+    if (id === 'admin:links' || id.includes('admin:links:')) {
+      await interaction.deferUpdate();
+      
+      let page = 0;
+      if (id.includes(':next:')) {
+        page = parseInt(id.split(':').pop() || '0') + 1;
+      } else if (id.includes(':prev:')) {
+        page = Math.max(0, parseInt(id.split(':').pop() || '0') - 1);
+      }
+
+      const linkData = await getAllLinks(page, 10);
+
+      const linkListEmbed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle('🔗 Link Listesi')
+        .setDescription(
+          linkData.links.map((l, i) => 
+            `**${page * 10 + i + 1}.** ${l.url.substring(0, 50)}${l.url.length > 50 ? '...' : ''}\n` +
+            `├ 🆔 ID: \`${l.id}\`\n` +
+            `├ 👤 Sahibi: <@${l.ownerUserId}>\n` +
+            `├ 💰 Budget: **${l.budget}**\n` +
+            `├ 👁️ Ziyaretçi: **${l.visitorsCount}**\n` +
+            `└ 📅 Tarih: ${new Date(l.createdAt).toLocaleDateString('tr-TR')}`
+          ).join('\n\n') || 'Henüz link yok.'
+        )
+        .setFooter({ text: `Sayfa ${page + 1} • Toplam ${linkData.total} link` })
+        .setTimestamp();
+
+      await interaction.editReply({
+        embeds: [linkListEmbed],
+        components: [linkListButtons(page, linkData.hasMore)]
+      });
+      return;
+    }
+
+    // Kullanıcı yönetimi modallari
+    if (id === 'admin:user_manage') {
+      return interaction.reply({
+        content: '**👤 Kullanıcı Yönetimi**\n\nAşağıdaki işlemlerden birini seçin:',
+        ephemeral: true,
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId('admin:modal:set_balance').setLabel('💰 Bakiye Ayarla').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('admin:modal:add_points').setLabel('➕ Puan Ekle/Çıkar').setStyle(ButtonStyle.Success)
+          ),
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId('admin:modal:user_info').setLabel('📊 Kullanıcı Bilgisi').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId('admin:modal:delete_user_links').setLabel('🗑️ Kullanıcı Linkleri Sil').setStyle(ButtonStyle.Danger)
+          )
+        ]
+      });
+    }
+
+    // Link yönetimi modallari
+    if (id === 'admin:link_manage') {
+      return interaction.reply({
+        content: '**🔗 Link Yönetimi**\n\nAşağıdaki işlemlerden birini seçin:',
+        ephemeral: true,
+        components: [
+          new ActionRowBuilder<ButtonBuilder>().addComponents(
+            new ButtonBuilder().setCustomId('admin:modal:link_info').setLabel('📊 Link Bilgisi').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId('admin:modal:delete_link').setLabel('🗑️ Link Sil').setStyle(ButtonStyle.Danger)
+          )
+        ]
+      });
+    }
+
+    // Modal açma butonları
+    if (id === 'admin:modal:set_balance') {
+      return interaction.showModal(setUserBalanceModal());
+    }
+    if (id === 'admin:modal:add_points') {
+      return interaction.showModal(addPointsModal());
+    }
+    if (id === 'admin:modal:delete_link') {
+      return interaction.showModal(deleteLinkModal());
+    }
+    if (id === 'admin:modal:user_info') {
+      return interaction.showModal(getUserInfoModal());
+    }
+    if (id === 'admin:modal:link_info') {
+      return interaction.showModal(getLinkInfoModal());
+    }
+    if (id === 'admin:modal:delete_user_links') {
+      return interaction.showModal(deleteUserLinksModal());
+    }
+  }
 }
 
 async function handleModal(interaction: ModalSubmitInteraction) {
@@ -174,6 +393,179 @@ async function handleModal(interaction: ModalSubmitInteraction) {
     await addPoints(interaction.user.id, amount);
     await removeBudget(linkId, amount);
     return interaction.editReply(`Removed ${amount} points from link budget and refunded.`);
+  }
+
+  // Admin Panel Modals
+  if (interaction.customId.startsWith('admin:')) {
+    // Yetki kontrolü
+    if (!isAdmin(interaction.user.id)) {
+      return interaction.reply({ content: '❌ Bu özelliği kullanma yetkiniz yok!', ephemeral: true });
+    }
+
+    // Kullanıcı bakiyesi ayarla
+    if (interaction.customId === 'admin:set_balance') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = interaction.fields.getTextInputValue('admin:user_id').trim();
+      const balance = Math.max(0, parseInt(interaction.fields.getTextInputValue('admin:balance')));
+
+      if (isNaN(balance)) {
+        return interaction.editReply('❌ Geçersiz bakiye değeri!');
+      }
+
+      const newBalance = await setUserBalance(userId, balance);
+      
+      const embed = new EmbedBuilder()
+        .setColor(0x00FF00)
+        .setTitle('✅ Bakiye Güncellendi')
+        .setDescription(`<@${userId}> kullanıcısının bakiyesi güncellendi!`)
+        .addFields(
+          { name: '💰 Yeni Bakiye', value: newBalance.toString(), inline: true },
+          { name: '👤 Kullanıcı ID', value: userId, inline: true }
+        )
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // Kullanıcıya puan ekle/çıkar
+    if (interaction.customId === 'admin:add_points') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = interaction.fields.getTextInputValue('admin:user_id').trim();
+      const pointsStr = interaction.fields.getTextInputValue('admin:points').trim();
+      const points = parseInt(pointsStr);
+
+      if (isNaN(points)) {
+        return interaction.editReply('❌ Geçersiz puan değeri!');
+      }
+
+      const currentBalance = await getUserBalance(userId);
+      let newBalance: number;
+
+      if (points > 0) {
+        newBalance = await addPoints(userId, points);
+      } else {
+        newBalance = await removePoints(userId, Math.abs(points));
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(points > 0 ? 0x00FF00 : 0xFF0000)
+        .setTitle(points > 0 ? '➕ Puan Eklendi' : '➖ Puan Çıkarıldı')
+        .setDescription(`<@${userId}> kullanıcısına **${points > 0 ? '+' : ''}${points}** puan ${points > 0 ? 'eklendi' : 'çıkarıldı'}!`)
+        .addFields(
+          { name: '💰 Eski Bakiye', value: currentBalance.toString(), inline: true },
+          { name: '💰 Yeni Bakiye', value: newBalance.toString(), inline: true },
+          { name: '📊 Değişim', value: `${points > 0 ? '+' : ''}${points}`, inline: true }
+        )
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // Link sil
+    if (interaction.customId === 'admin:delete_link') {
+      await interaction.deferReply({ ephemeral: true });
+      const linkId = interaction.fields.getTextInputValue('admin:link_id').trim();
+
+      const linkInfo = await getLinkInfo(linkId);
+      if (!linkInfo) {
+        return interaction.editReply('❌ Link bulunamadı!');
+      }
+
+      const deleted = await deleteLink(linkId);
+      
+      if (deleted) {
+        const embed = new EmbedBuilder()
+          .setColor(0xFF0000)
+          .setTitle('🗑️ Link Silindi')
+          .setDescription(`Link başarıyla silindi!`)
+          .addFields(
+            { name: '🔗 URL', value: linkInfo.url },
+            { name: '👤 Sahibi', value: `<@${linkInfo.ownerUserId}>` },
+            { name: '💰 Kalan Budget', value: linkInfo.budget.toString() }
+          )
+          .setTimestamp();
+
+        return interaction.editReply({ embeds: [embed] });
+      } else {
+        return interaction.editReply('❌ Link silinemedi!');
+      }
+    }
+
+    // Kullanıcı bilgisi
+    if (interaction.customId === 'admin:user_info') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = interaction.fields.getTextInputValue('admin:user_id').trim();
+
+      const userInfo = await getUserInfo(userId);
+      
+      if (!userInfo) {
+        return interaction.editReply('❌ Kullanıcı bulunamadı!');
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle('📊 Kullanıcı Bilgileri')
+        .setDescription(`<@${userId}> kullanıcısının detaylı bilgileri:`)
+        .addFields(
+          { name: '💰 Bakiye', value: userInfo.balance.toString(), inline: true },
+          { name: '🔗 Ziyaret Edilen', value: userInfo.visitedCount.toString(), inline: true },
+          { name: '📝 Oluşturulan Link', value: userInfo.ownedLinksCount.toString(), inline: true },
+          { name: '💵 Aktif Budget', value: userInfo.activeBudget.toString(), inline: true },
+          { name: '📅 Katılma Tarihi', value: new Date(userInfo.createdAt).toLocaleString('tr-TR'), inline: false }
+        )
+        .setFooter({ text: 'User ID: ' + userId })
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // Link bilgisi
+    if (interaction.customId === 'admin:link_info') {
+      await interaction.deferReply({ ephemeral: true });
+      const linkId = interaction.fields.getTextInputValue('admin:link_id').trim();
+
+      const linkInfo = await getLinkInfo(linkId);
+      
+      if (!linkInfo) {
+        return interaction.editReply('❌ Link bulunamadı!');
+      }
+
+      const embed = new EmbedBuilder()
+        .setColor(0x0099FF)
+        .setTitle('📊 Link Bilgileri')
+        .setDescription(`Link detaylı bilgileri:`)
+        .addFields(
+          { name: '🔗 URL', value: linkInfo.url },
+          { name: '👤 Sahibi', value: `<@${linkInfo.ownerUserId}>`, inline: true },
+          { name: '💰 Budget', value: linkInfo.budget.toString(), inline: true },
+          { name: '👁️ Ziyaretçi Sayısı', value: linkInfo.visitorsCount.toString(), inline: true },
+          { name: '📅 Oluşturulma', value: new Date(linkInfo.createdAt).toLocaleString('tr-TR'), inline: true },
+          { name: '🔄 Son Güncelleme', value: new Date(linkInfo.updatedAt).toLocaleString('tr-TR'), inline: true }
+        )
+        .setFooter({ text: 'Link ID: ' + linkId })
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
+
+    // Kullanıcının tüm linklerini sil
+    if (interaction.customId === 'admin:delete_user_links') {
+      await interaction.deferReply({ ephemeral: true });
+      const userId = interaction.fields.getTextInputValue('admin:user_id').trim();
+
+      const deletedCount = await deleteLinksByUser(userId);
+
+      const embed = new EmbedBuilder()
+        .setColor(0xFF0000)
+        .setTitle('🗑️ Kullanıcı Linkleri Silindi')
+        .setDescription(`<@${userId}> kullanıcısının tüm linkleri silindi!`)
+        .addFields(
+          { name: '📊 Silinen Link Sayısı', value: deletedCount.toString() }
+        )
+        .setTimestamp();
+
+      return interaction.editReply({ embeds: [embed] });
+    }
   }
 }
 
