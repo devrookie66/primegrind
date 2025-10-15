@@ -50,9 +50,18 @@ export function createServer() {
   app.post('/healthz', (_req, res) => res.json({ ok: true }));
   app.get('/healthz', (_req, res) => res.json({ ok: true }));
 
-  // Admin panel routes
+  // Admin panel HTML
   app.get('/admin', (_req, res) => {
-    res.sendFile(path.join(__dirname, 'adminPanel.html'));
+    // Production: dist/api/adminPanel.html
+    // Development: use src/api/adminPanel.html
+    const htmlPath = path.join(__dirname, 'adminPanel.html');
+    res.sendFile(htmlPath, (err) => {
+      if (err) {
+        // Fallback to src path for development
+        const devPath = path.join(__dirname, '../../src/api/adminPanel.html');
+        res.sendFile(devPath);
+      }
+    });
   });
 
   app.get('/api/admin/config', requireAdmin, getConfig);

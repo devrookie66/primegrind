@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/api/adminPanel.html', 'dist/api/adminPanel.html')\"",
     "start": "node dist/index.js",
     "register": "node dist/registerCommands.js",
     "register:dev": "ts-node-dev --transpile-only src/registerCommands.ts"
