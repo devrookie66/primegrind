@@ -350,6 +350,26 @@
             <!-- Users Tab -->
             <div id="users" class="tab-content card">
                 <h3>👥 Tüm Kullanıcılar</h3>
+                
+                <!-- Puan Verme/Alma Formu -->
+                <div style="background: #f9fafb; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <h4 style="margin-bottom: 15px; color: #667eea;">💰 Kullanıcıya Puan Ver/Al</h4>
+                    <form id="pointsForm" style="display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;">
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="userIdInput">Discord Kullanıcı ID</label>
+                            <input type="text" id="userIdInput" placeholder="Örn: 175694554501087232" required>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 0;">
+                            <label for="pointsInput">Puan Miktarı</label>
+                            <input type="number" id="pointsInput" placeholder="Pozitif: Ver, Negatif: Al" required>
+                        </div>
+                        <button type="submit" class="btn" style="width: auto; padding: 10px 30px;">Uygula</button>
+                    </form>
+                    <p style="margin-top: 10px; font-size: 12px; color: #666;">
+                        💡 İpucu: Puan vermek için pozitif (+100), puan almak için negatif (-50) değer girin.
+                    </p>
+                </div>
+
                 <div style="overflow-x: auto;">
                     <table id="usersTable">
                         <thead>
@@ -570,9 +590,11 @@
                 tbody.innerHTML = data.users.map(user => `
                     <tr>
                         <td>${user.userId}</td>
-                        <td>${user.balance}</td>
-                        <td>
-                            <button class="btn-small btn-danger" onclick="editUserBalance('${user.userId}', ${user.balance})">Düzenle</button>
+                        <td><strong>${user.balance}</strong> puan</td>
+                        <td style="display: flex; gap: 5px;">
+                            <button class="btn-small" style="background: #10b981; color: white;" onclick="quickAddPoints('${user.userId}', ${user.balance})">+Puan</button>
+                            <button class="btn-small" style="background: #f59e0b; color: white;" onclick="quickRemovePoints('${user.userId}', ${user.balance})">-Puan</button>
+                            <button class="btn-small btn-danger" onclick="editUserBalance('${user.userId}', ${user.balance})">Set</button>
                         </td>
                     </tr>
                 `).join('');
@@ -602,6 +624,108 @@
                 showError('Bağlantı hatası!');
             }
         }
+
+        // Hızlı puan ekleme
+        async function quickAddPoints(userId, currentBalance) {
+            const amount = prompt(`${userId} için eklenecek puan miktarı:`, '100');
+            if (amount === null) return;
+            
+            const points = parseInt(amount);
+            if (isNaN(points) || points <= 0) {
+                showError('Geçerli bir pozitif sayı girin!');
+                return;
+            }
+
+            await addOrRemovePoints(userId, points, currentBalance);
+        }
+
+        // Hızlı puan çıkarma
+        async function quickRemovePoints(userId, currentBalance) {
+            const amount = prompt(`${userId} için çıkarılacak puan miktarı:`, '50');
+            if (amount === null) return;
+            
+            const points = parseInt(amount);
+            if (isNaN(points) || points <= 0) {
+                showError('Geçerli bir pozitif sayı girin!');
+                return;
+            }
+
+            await addOrRemovePoints(userId, -points, currentBalance);
+        }
+
+        // Puan ekleme/çıkarma işlemi
+        async function addOrRemovePoints(userId, points, currentBalance) {
+            try {
+                const newBalance = Math.max(0, currentBalance + points);
+                
+                const response = await apiCall(`/api/admin/users/${userId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ balance: newBalance })
+                });
+
+                if (response.ok) {
+                    const action = points > 0 ? 'eklendi' : 'çıkarıldı';
+                    showSuccess(`${Math.abs(points)} puan ${action}! Yeni bakiye: ${newBalance}`);
+                    await loadUsers();
+                    await loadStatistics();
+                } else {
+                    showError('İşlem başarısız!');
+                }
+            } catch (error) {
+                showError('Bağlantı hatası!');
+            }
+        }
+
+        // Puan formu handler'ı
+        document.addEventListener('DOMContentLoaded', () => {
+            const pointsForm = document.getElementById('pointsForm');
+            if (pointsForm) {
+                pointsForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    const userId = document.getElementById('userIdInput').value.trim();
+                    const points = parseInt(document.getElementById('pointsInput').value);
+
+                    if (!userId) {
+                        showError('Kullanıcı ID boş olamaz!');
+                        return;
+                    }
+
+                    if (isNaN(points) || points === 0) {
+                        showError('Geçerli bir puan miktarı girin (0 olamaz)!');
+                        return;
+                    }
+
+                    try {
+                        // Önce kullanıcının mevcut bakiyesini al
+                        const usersResponse = await apiCall('/api/admin/users?limit=1000');
+                        const usersData = await usersResponse.json();
+                        const user = usersData.users.find(u => u.userId === userId);
+                        
+                        const currentBalance = user ? user.balance : 0;
+                        const newBalance = Math.max(0, currentBalance + points);
+
+                        const response = await apiCall(`/api/admin/users/${userId}`, {
+                            method: 'PUT',
+                            body: JSON.stringify({ balance: newBalance })
+                        });
+
+                        if (response.ok) {
+                            const action = points > 0 ? 'eklendi' : 'çıkarıldı';
+                            showSuccess(`${userId} kullanıcısına ${Math.abs(points)} puan ${action}! Yeni bakiye: ${newBalance}`);
+                            document.getElementById('userIdInput').value = '';
+                            document.getElementById('pointsInput').value = '';
+                            await loadUsers();
+                            await loadStatistics();
+                        } else {
+                            showError('İşlem başarısız!');
+                        }
+                    } catch (error) {
+                        showError('Bağlantı hatası: ' + error.message);
+                    }
+                });
+            }
+        });
 
         function showTab(tabName) {
             // Hide all tabs
